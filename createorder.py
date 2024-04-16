@@ -287,6 +287,24 @@ def modal_okay(driver):
     except Exception as e:
         print("An error occurred:", e)
 
+def fetch_orders_with_empty_done(spreadsheet):
+    order_sheet = spreadsheet.worksheet('Orders')
+    
+    try:
+        orders_data = order_sheet.get_all_values()
+        orders_headers = orders_data[0]
+        orders_data_rows = orders_data[1:]
+        orders_data_rows.reverse()  # If you want the latest orders first
+        orders_with_empty_done = []
+        
+        for row in orders_data_rows:
+            if not row[-3]:  # Assuming "Done" column is the last column
+                orders_with_empty_done.append({orders_headers[i]: row[i] for i in range(len(orders_headers))})
+        
+        return orders_with_empty_done
+    except Exception as e:
+        print("An error occurred:", e)
+
 def fetch_order_values(spreadsheet):
     order_sheet = spreadsheet.worksheet('Orders')
 
@@ -294,9 +312,14 @@ def fetch_order_values(spreadsheet):
         orders_data = order_sheet.get_all_values()
         orders_headers = orders_data[0]
         orders_data_rows = orders_data[1:]
-        orders_data_rows.reverse()
-        orders = {orders_headers[i]: row[i] for i in range(len(orders_headers)) for row in orders_data_rows}
-        return orders
+
+        for index, row in enumerate(orders_data_rows, start=2):  # Start from 2 to match sheet index
+            if not row[-3]:  # Assuming "Done" column is the last column
+                order = {orders_headers[i]: row[i] for i in range(len(orders_headers))}
+                return index, order  # Return row index and order values
+        
+        # If no such row is found, return None
+        return None, None
     except Exception as e:
         print("An error occurred:", e)
 
@@ -307,7 +330,12 @@ def move_row(source_sheet, destination_sheet, copy_delete_index):
 
 def check_for_new_rows(spreadsheet):
     order_sheet = spreadsheet.worksheet('Orders')
-    return len(order_sheet.get_all_records()) > 0
+    orders_data = order_sheet.get_all_values()
+
+    for row in orders_data:
+        if not row[-1]:  # Assuming "Done" column is the last column
+            return True
+    return False
 
 def check_required_fields(ordervalues):
     required_fields = ['Client', 'Address', 'OrderType', 'Portal', 'PhotoFee', 'OrderValue']
@@ -315,124 +343,128 @@ def check_required_fields(ordervalues):
         if not ordervalues.get(field):
             return True  # Return True if any required field is empty
     return False
+
+def check_all_fields_empty(ordervalues):
+    required_fields = ['Client', 'Address', 'OrderType', 'Portal', 'PhotoFee', 'OrderValue']
+    
+    # Check if all required fields are empty
+    all_empty = all(ordervalues.get(field) == '' for field in required_fields)
+    
+    return all_empty
+
+
+
 def main():
-   driver = Open_Website()
-   Login(driver)
-   select_function_module(driver)
-   select_create_order_module(driver)
+    driver = Open_Website()
+    Login(driver)
+    select_function_module(driver)
+    select_create_order_module(driver)
+    
 
-   scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-   credentials = ServiceAccountCredentials.from_json_keyfile_name('spreadsheetapi-419712-5eef6519a06b.json', scope)
-   client = gspread.authorize(credentials)
-   # Open the spreadsheet
-   spreadsheet = client.open('Create-Order')
-   order_sheet = spreadsheet.worksheet('Orders')
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    credentials = ServiceAccountCredentials.from_json_keyfile_name('spreadsheetapi-419712-5eef6519a06b.json', scope)
+    client = gspread.authorize(credentials)
+    # Open the spreadsheet
+    spreadsheet = client.open('Create-Order')
+    order_sheet = spreadsheet.worksheet('Orders')
 
-   while True:
-       if check_for_new_rows(spreadsheet):
-           n = len(order_sheet.get_all_records())
+    while True:
+        if check_for_new_rows(spreadsheet):
+            neworders = fetch_orders_with_empty_done(spreadsheet)  # fetch all the orders that are new
+            n = len(neworders)
+            for i in range(1, n+1): 
+                row_index, ordervalues = fetch_order_values(spreadsheet) #fetch first row that is new
 
-           # Loop to process each order, excluding the header row
-           for i in range(1, n+1):  # Start from 1 to exclude the header row
-               ordervalues = fetch_order_values(spreadsheet)
+                if check_all_fields_empty(ordervalues):
+                    order_sheet.delete_rows(row_index)
+                    continue
 
-               if check_required_fields(ordervalues):
-                   print("Waiting for required fields to be filled...")
-                   time.sleep(20)
-                   continue
-               start_time = time.time()
-               # clientname = "Bang _Andrew Persaud"
-               clientname = ordervalues.get("Client")
-               client_name(driver, clientname)
+                if check_required_fields(ordervalues):
+                    print("Waiting for required fields to be filled...")
+                    time.sleep(20)
+                    continue
+                
+                start_time = time.time()
+                # clientname = "Bang _Andrew Persaud"
+                clientname = ordervalues.get("Client")
+                client_name(driver, clientname)
 
-               # subjectaddress = "Dummy 6327 Peach Ave, Corona, CA, 92880"
-               subjectaddress = ordervalues.get("Address")
-               subject_address(driver, subjectaddress)
+                # subjectaddress = "Dummy 6327 Peach Ave, Corona, CA, 92880"
+                subjectaddress = ordervalues.get("Address")
+                subject_address(driver, subjectaddress)
 
-               # orderno = "653421"
-               orderno = ordervalues.get("OrderNo")
-               order_no(driver, orderno)
+                # orderno = "653421"
+                orderno = ordervalues.get("OrderNo")
+                order_no(driver, orderno)
 
-               # ordertype = "EXT"
-               ordertype = ordervalues.get("OrderType")
-               order_type(driver, ordertype)
+                # ordertype = "EXT"
+                ordertype = ordervalues.get("OrderType")
+                order_type(driver, ordertype)
 
-               # duedatetime = "04-28-2024 03:25 AM"
-               duedatetime = ordervalues.get("OrderDue")
-               if duedatetime != "":
-                   duedate, duetime = order_due_split(driver, duedatetime)
-                   order_due_date(driver, duedate)
-                   order_due_time(driver, duetime)
+                # duedatetime = "04-28-2024 03:25 AM"
+                duedatetime = ordervalues.get("OrderDue")
+                if duedatetime != "":
+                    duedate, duetime = order_due_split(driver, duedatetime)
+                    order_due_date(driver, duedate)
+                    order_due_time(driver, duetime)
 
-               # timezone = ""
-               timezone = ordervalues.get("TimeZone")
-               time_zone(driver, timezone)
+                # timezone = ""
+                timezone = ordervalues.get("TimeZone")
+                time_zone(driver, timezone)
 
-               # photographer = ""
-               photographer = ordervalues.get("Photographer")
-               photo_grapher(driver, photographer)
+                # photographer = ""
+                photographer = ordervalues.get("Photographer")
+                photo_grapher(driver, photographer)
 
-               # photographernotes = ""
-               photographernotes = ordervalues.get("Notes")
-               if photographernotes != "":
-                   photographer_notes(driver, photographernotes)
+                # photographernotes = ""
+                photographernotes = ordervalues.get("Notes")
+                if photographernotes != "":
+                    photographer_notes(driver, photographernotes)
 
-               #portal = "Single Source" #convert to single letters and compare
-               portal = ordervalues.get("Portal")
-               portal_fun(driver, portal)
+                #portal = "Single Source" #convert to single letters and compare
+                portal = ordervalues.get("Portal")
+                portal_fun(driver, portal)
 
-               # photographerfee = "10"
-               photographerfee = ordervalues.get("PhotoFee")
-               photographer_fee(driver, photographerfee)
+                # photographerfee = "10"
+                photographerfee = ordervalues.get("PhotoFee")
+                photographer_fee(driver, photographerfee)
 
-               # ordervalue = "10"
-               ordervalue = ordervalues.get("OrderValue")
-               order_value(driver, ordervalue)
+                # ordervalue = "10"
+                ordervalue = ordervalues.get("OrderValue")
+                order_value(driver, ordervalue)
 
-               # remarks = ""
-               remarks = ordervalues.get("Remarks")
-               if remarks != "":
-                   remarks_fun(driver, remarks)
+                    # remarks = ""
+                remarks = ordervalues.get("Remarks")
+                if remarks != "":
+                    remarks_fun(driver, remarks)
 
-               saveorder(driver)
-               end_time = time.time()
-               modal_okay(driver)
+                saveorder(driver)
+                end_time = time.time()
+                modal_okay(driver)
 
-               select_create_order_module(driver)
+                select_create_order_module(driver)
 
-               # Open the worksheets
-               source_sheet = spreadsheet.worksheet('Orders')
-               destination_sheet = spreadsheet.worksheet('Done')
+                order_sheet.update_cell(row_index, len(ordervalues) - 2, "created")
 
-               copy_delete_index = 2  # Get the length of records as an integer
+                start_datetime = datetime.datetime.fromtimestamp(start_time)
+                end_datetime = datetime.datetime.fromtimestamp(end_time)
 
-               # After completing the iteration, move the row from 'Orders' to 'Done' worksheet
-               move_row(source_sheet, destination_sheet, copy_delete_index)  # Add 1 to the length
+                # Convert datetime objects to Indian Standard Time (IST)
+                ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                start_ist = start_datetime.astimezone(ist)
+                end_ist = end_datetime.astimezone(ist)
 
-               # Convert Unix timestamps to datetime objects
-               start_datetime = datetime.datetime.fromtimestamp(start_time)
-               end_datetime = datetime.datetime.fromtimestamp(end_time)
+                # Convert datetime object to a string format
+                start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
+                end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
 
-               # Convert datetime objects to Indian Standard Time (IST)
-               ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-               start_ist = start_datetime.astimezone(ist)
-               end_ist = end_datetime.astimezone(ist)
+                order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
+                order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
 
-               # Print the converted times
-               print("Start Time (IST): ", i, start_ist)
-               print("End Time (IST): ", i, end_ist)
-
-           total_end_time = time.time()
-           total_end_datetime = datetime.datetime.fromtimestamp(total_end_time)
-           # Convert datetime objects to Indian Standard Time (IST)
-           ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-           total_end_ist = total_end_datetime.astimezone(ist)
-           print("Total End time:", total_end_ist)
-           # After processing all orders, sleep for 10 seconds before checking for new rows again
-           time.sleep(10)
-       else:
+        else:
            # If no new rows are found, sleep for 10 seconds before checking again
            time.sleep(10)
 
 if __name__ == "__main__":
    main()
+   
