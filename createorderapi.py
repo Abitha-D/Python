@@ -173,14 +173,19 @@ def main():
                     continue
 
                 clientname = ordervalues.get("Client")
+                clientname = clientname.rstrip(' ')
 
                 subjectaddress = ordervalues.get("Address")
+                subjectaddress = subjectaddress.rstrip(' ')
 
                 orderno = ordervalues.get("OrderNo")
+                orderno = orderno.rstrip(' ')
 
                 ordertype = ordervalues.get("OrderType")
+                ordertype = ordertype.rstrip(' ')
 
                 duedatetime = ordervalues.get("OrderDue")
+                duedatetime = duedatetime.rstrip(' ')
                 if duedatetime != "":
                     # Check if duedatetime is in the format "06/28/2018 03:25 AM"
                     if "-" in duedatetime:
@@ -197,6 +202,7 @@ def main():
                     formatted_due_date = datetime.strptime(duedatetime, "%m/%d/%Y %I:%M %p")
 
                 timezone = ordervalues.get("TimeZone")
+                timezone = timezone.rstrip(' ')
                 if timezone == "":
                     timezone = "EST"
 
@@ -212,6 +218,7 @@ def main():
                
 
                 photographer = ordervalues.get("Photographer")
+                photographer =  photographer.rstrip(' ')
                 if photographer == "":
                     photographer = "Ecesis Photographer"
 
@@ -220,12 +227,15 @@ def main():
 
                 #portal = "Single Source" #convert to single letters and compare
                 portal = ordervalues.get("Portal")
+                portal = portal.rstrip(' ')
 
                 # photographerfee = "10"
                 photographerfee = ordervalues.get("PhotoFee")
+                photographerfee = photographerfee.rstrip(' ')
 
                 # ordervalue = "10"
                 ordervalue = ordervalues.get("OrderValue")
+                ordervalue = ordervalue.rstrip(' ')
 
                     # remarks = ""
                 remarks = ordervalues.get("Remarks")
