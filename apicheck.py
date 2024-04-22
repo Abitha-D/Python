@@ -16,6 +16,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 import datetime
 
+import requests
+
 def Open_Website():
     # Open Chrome
     driver = webdriver.Chrome()
@@ -288,7 +290,7 @@ def modal_okay(driver):
         print("An error occurred:", e)
 
 def fetch_orders_with_empty_done(spreadsheet):
-    order_sheet = spreadsheet.worksheet('Orders')
+    order_sheet = spreadsheet.worksheet('Events')
     
     try:
         orders_data = order_sheet.get_all_values()
@@ -306,7 +308,7 @@ def fetch_orders_with_empty_done(spreadsheet):
         print("An error occurred:", e)
 
 def fetch_order_values(spreadsheet):
-    order_sheet = spreadsheet.worksheet('Orders')
+    order_sheet = spreadsheet.worksheet('Events')
 
     try:
         orders_data = order_sheet.get_all_values()
@@ -329,7 +331,7 @@ def move_row(source_sheet, destination_sheet, copy_delete_index):
     source_sheet.delete_rows(copy_delete_index)    # Delete the row from the source worksheet
 
 def check_for_new_rows(spreadsheet):
-    order_sheet = spreadsheet.worksheet('Orders')
+    order_sheet = spreadsheet.worksheet('Events')
     orders_data = order_sheet.get_all_values()
 
     for row in orders_data:
@@ -338,35 +340,56 @@ def check_for_new_rows(spreadsheet):
     return False
 
 def check_required_fields(ordervalues):
-    required_fields = ['Client', 'Address', 'OrderType', 'Portal', 'PhotoFee', 'OrderValue']
+    required_fields = ['Title', 'StartTime', 'EndTime', 'AddedDate', 'AddedBy']
     for field in required_fields:
         if not ordervalues.get(field):
             return True  # Return True if any required field is empty
     return False
 
 def check_all_fields_empty(ordervalues):
-    required_fields = ['Client', 'Address', 'OrderType', 'Portal', 'PhotoFee', 'OrderValue']
+    required_fields = ['Title', 'StartTime', 'EndTime', 'AddedDate', 'AddedBy']
     
     # Check if all required fields are empty
     all_empty = all(ordervalues.get(field) == '' for field in required_fields)
     
     return all_empty
 
+def add_event(AddEventapiUrl, token, requestBody):
+    try:
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.post(AddEventapiUrl, headers=headers, json=requestBody)
+
+        if response.ok == True:
+            responseData = response.json()
+            apiStatus = responseData['apiStatus']
+
+            if apiStatus == 0:  # Success
+                return True
+            else:
+                return False
+        else:
+            return False
+
+    except Exception as e:
+        print("An error occurred:", e)
 
 
 def main():
-    driver = Open_Website()
-    Login(driver)
-    select_function_module(driver)
-    select_create_order_module(driver)
     
+    baseUrl = "http://13.200.17.36/Order_Count_Insight/api/OrderCountInsights" 
+    tokenget =  "eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNjlkYzAxNy0wYWExLTQyZmItYjYxZS0wNzAyMzg0NjFiZWUiLCJFbXBsb3llZU5hbWUiOiJSYW1LdW1hciIsImV4cCI6MTcxMzQ1MDI4MiwiaXNzIjoiaHR0cDovLzEzLjIwMC4xNy4zNi8iLCJhdWQiOiJodHRwOi8vMTMuMjAwLjE3LjM2LyJ9.uF7aMoZPS_Cbp5sxv1xsnBtfrpFPCYqfXPyhaoYbRaQ"
+    AddEventapiUrl = f"{baseUrl}/AddEvents"
 
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_name('spreadsheetapi-419712-5eef6519a06b.json', scope)
     client = gspread.authorize(credentials)
     # Open the spreadsheet
-    spreadsheet = client.open('Create-Order')
-    order_sheet = spreadsheet.worksheet('Orders')
+    spreadsheet = client.open('Ram-Status')
+    order_sheet = spreadsheet.worksheet('Events')
 
     while True:
         if check_for_new_rows(spreadsheet):
@@ -383,88 +406,61 @@ def main():
                     print("Waiting for required fields to be filled...")
                     time.sleep(20)
                     continue
-                
+
+                # Format order data for API
+                requestBody = {
+                    'eventtitle': ordervalues.get('Title'),
+                    'eventstarttime': ordervalues.get('StartTime'),
+                    'eventendtime': ordervalues.get('EndTime'),
+                    'addeddate': ordervalues.get('AddedDate'),
+                    'addedby': ordervalues.get('AddedBy'),
+                    # Add other fields as needed
+                }
+
                 start_time = time.time()
-                # clientname = "Bang _Andrew Persaud"
-                clientname = ordervalues.get("Client")
-                client_name(driver, clientname)
+                if add_event(AddEventapiUrl, tokenget, requestBody):
+                    end_time = time.time()
 
-                # subjectaddress = "Dummy 6327 Peach Ave, Corona, CA, 92880"
-                subjectaddress = ordervalues.get("Address")
-                subject_address(driver, subjectaddress)
+                    order_sheet.update_cell(row_index, len(ordervalues) - 2, "created")
 
-                # orderno = "653421"
-                orderno = ordervalues.get("OrderNo")
-                order_no(driver, orderno)
+                    start_datetime = datetime.datetime.fromtimestamp(start_time)
+                    end_datetime = datetime.datetime.fromtimestamp(end_time)
 
-                # ordertype = "EXT"
-                ordertype = ordervalues.get("OrderType")
-                order_type(driver, ordertype)
+                    # Convert datetime objects to Indian Standard Time (IST)
+                    ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                    start_ist = start_datetime.astimezone(ist)
+                    end_ist = end_datetime.astimezone(ist)
 
-                # duedatetime = "04-28-2024 03:25 AM"
-                duedatetime = ordervalues.get("OrderDue")
-                if duedatetime != "":
-                    duedate, duetime = order_due_split(driver, duedatetime)
-                    order_due_date(driver, duedate)
-                    order_due_time(driver, duetime)
+                    # Convert datetime object to a string format
+                    start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
+                    end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
 
-                # timezone = ""
-                timezone = ordervalues.get("TimeZone")
-                time_zone(driver, timezone)
+                    order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
+                    order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
+                else:
+                    end_time = time.time()
 
-                # photographer = ""
-                photographer = ordervalues.get("Photographer")
-                photo_grapher(driver, photographer)
+                    order_sheet.update_cell(row_index, len(ordervalues) - 2, "Not created")
 
-                # photographernotes = ""
-                photographernotes = ordervalues.get("Notes")
-                if photographernotes != "":
-                    photographer_notes(driver, photographernotes)
+                    start_datetime = datetime.datetime.fromtimestamp(start_time)
+                    end_datetime = datetime.datetime.fromtimestamp(end_time)
 
-                #portal = "Single Source" #convert to single letters and compare
-                portal = ordervalues.get("Portal")
-                portal_fun(driver, portal)
+                    # Convert datetime objects to Indian Standard Time (IST)
+                    ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                    start_ist = start_datetime.astimezone(ist)
+                    end_ist = end_datetime.astimezone(ist)
 
-                # photographerfee = "10"
-                photographerfee = ordervalues.get("PhotoFee")
-                photographer_fee(driver, photographerfee)
+                    # Convert datetime object to a string format
+                    start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
+                    end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
 
-                # ordervalue = "10"
-                ordervalue = ordervalues.get("OrderValue")
-                order_value(driver, ordervalue)
-
-                    # remarks = ""
-                remarks = ordervalues.get("Remarks")
-                if remarks != "":
-                    remarks_fun(driver, remarks)
-
-                saveorder(driver)
-                end_time = time.time()
-                modal_okay(driver)
-
-                select_create_order_module(driver)
-
-                order_sheet.update_cell(row_index, len(ordervalues) - 2, "created")
-
-                start_datetime = datetime.datetime.fromtimestamp(start_time)
-                end_datetime = datetime.datetime.fromtimestamp(end_time)
-
-                # Convert datetime objects to Indian Standard Time (IST)
-                ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-                start_ist = start_datetime.astimezone(ist)
-                end_ist = end_datetime.astimezone(ist)
-
-                # Convert datetime object to a string format
-                start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
-                end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
-
-                order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
-                order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
+                    order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
+                    order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
 
         else:
            # If no new rows are found, sleep for 10 seconds before checking again
            time.sleep(10)
 
-# if __name__ == "__main__":
-#    main()
+if __name__ == "__main__":
+   main()
    

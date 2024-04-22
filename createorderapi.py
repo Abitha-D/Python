@@ -16,6 +16,13 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 import datetime
 
+from datetime import datetime, timedelta
+import pytz
+
+
+import requests
+import json
+
 def Open_Website():
     # Open Chrome
     driver = webdriver.Chrome()
@@ -120,7 +127,7 @@ def order_type(driver, ordertype):
     except Exception as e:
         print("An error occurred:", e)
 
-def order_due_split(driver, duedatetime):
+def order_due_split(duedatetime):
     # Split the duedatetime string by space to separate date and time
     date_str, time_str, time_zone = duedatetime.split()
 
@@ -352,20 +359,100 @@ def check_all_fields_empty(ordervalues):
     
     return all_empty
 
+def add_event(AddEventapiUrl, token, requestBody):
+    try:
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
 
+        response = requests.post(AddEventapiUrl, headers=headers, json=requestBody)
+
+        if response.ok == True:
+            responseData = response.json()
+            apiStatus = responseData['apiStatus']
+
+            if apiStatus == 0:  # Success
+                return True
+            else:
+                return False
+        else:
+            return False
+
+    except Exception as e:
+        print("An error occurred:", e)
+
+def fetch_required_values(GetRequiredValuesAPI, SelectrequestBody):
+    try:
+        response = requests.post(GetRequiredValuesAPI, json=SelectrequestBody)
+
+        if response.ok == True:
+            responseData = response.json()
+            apiStatus = responseData['apiStatus']
+
+            if apiStatus == 0:
+                result = json.loads(responseData['result'])
+                client_id = result[0]['ClientId']
+                portal_id = result[0]['PortalId']
+                photographer_id = result[0]['PhotographerId']
+                ordertype_id = result[0]['OrderTypeId']
+                zipcode_no = result[0]['Zipcode']
+                
+                return client_id, portal_id, photographer_id, ordertype_id, zipcode_no
+            else:
+                print("API Status Error:", responseData['APIStatusMessage'])
+                client_id, portal_id, photographer_id, ordertype_id, zipcode_no = 0
+                return client_id, portal_id, photographer_id, ordertype_id, zipcode_no
+        else:
+            print("Status Code: ", response.status_code)
+    except Exception as e:
+        print("An error occurred:", e)
+
+def fetch_createorder_api(CreateOrderAPI, PostRequestedBody):
+    try:
+        response = requests.post(CreateOrderAPI, json=PostRequestedBody)
+
+        if response.ok == True:
+            responseData = response.json()
+            apiStatus = responseData['apiStatus']
+
+            if apiStatus == 0:
+                result = json.loads(responseData['result'])
+                APIstatusmsg = result['APIStatusMessage']
+            
+                return APIstatusmsg
+            else:
+                result = json.loads(responseData['result'])
+                APIstatusmsg = result['APIStatusMessage']
+                
+                return APIstatusmsg
+        else:
+            # Assuming 'response' contains the JSON response
+            response_data = json.loads(response.text)
+
+            # Extract the 'result' field and parse it as JSON
+            result_data = json.loads(response_data['result'])
+
+            # Extract the 'APIStatusMessage' field from the parsed 'result' data
+            api_status_message = result_data['APIStatusMessage']
+
+            return api_status_message
+    except Exception as e:
+        print("An error occurred:", e)
 
 def main():
-    driver = Open_Website()
-    Login(driver)
-    select_function_module(driver)
-    select_create_order_module(driver)
     
+    baseUrl = "http://13.200.17.36/Order_Count_Insight/api/OrderCountInsights" 
+    # tokenget =  "eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNjlkYzAxNy0wYWExLTQyZmItYjYxZS0wNzAyMzg0NjFiZWUiLCJFbXBsb3llZU5hbWUiOiJSYW1LdW1hciIsImV4cCI6MTcxMzQ1MDI4MiwiaXNzIjoiaHR0cDovLzEzLjIwMC4xNy4zNi8iLCJhdWQiOiJodHRwOi8vMTMuMjAwLjE3LjM2LyJ9.uF7aMoZPS_Cbp5sxv1xsnBtfrpFPCYqfXPyhaoYbRaQ"
+    GetRequiredValuesAPI = f"{baseUrl}/GetRequiredValues"
+
+    CreateOrderAPI = f"{baseUrl}/CreateOrder"
 
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_name('spreadsheetapi-419712-5eef6519a06b.json', scope)
     client = gspread.authorize(credentials)
     # Open the spreadsheet
-    spreadsheet = client.open('Create-Order')
+    spreadsheet = client.open('Ram-Status')
     order_sheet = spreadsheet.worksheet('Orders')
 
     while True:
@@ -383,88 +470,166 @@ def main():
                     print("Waiting for required fields to be filled...")
                     time.sleep(20)
                     continue
-                
-                start_time = time.time()
-                # clientname = "Bang _Andrew Persaud"
+
                 clientname = ordervalues.get("Client")
-                client_name(driver, clientname)
 
-                # subjectaddress = "Dummy 6327 Peach Ave, Corona, CA, 92880"
                 subjectaddress = ordervalues.get("Address")
-                subject_address(driver, subjectaddress)
 
-                # orderno = "653421"
                 orderno = ordervalues.get("OrderNo")
-                order_no(driver, orderno)
 
-                # ordertype = "EXT"
                 ordertype = ordervalues.get("OrderType")
-                order_type(driver, ordertype)
 
-                # duedatetime = "04-28-2024 03:25 AM"
                 duedatetime = ordervalues.get("OrderDue")
                 if duedatetime != "":
-                    duedate, duetime = order_due_split(driver, duedatetime)
-                    order_due_date(driver, duedate)
-                    order_due_time(driver, duetime)
+                    # Check if duedatetime is in the format "06/28/2018 03:25 AM"
+                    if "-" in duedatetime:
+                        # Convert the format to "06/28/2018 03:25 AM"
+                        duedatetime = datetime.strptime(duedatetime, "%m-%d-%Y %I:%M %p")
 
-                # timezone = ""
+                else:
+                    # Get the current date and add 3 days
+                    current_datetime = datetime.now()
+                    new_due_date = current_datetime + timedelta(days=3)
+                    # Format the new due date as desired
+                    duedatetime = new_due_date.strftime("%m/%d/%Y %I:%M %p") #
+                    # Parse the formatted due date back into a datetime object
+                    formatted_due_date = datetime.strptime(duedatetime, "%m/%d/%Y %I:%M %p")
+
                 timezone = ordervalues.get("TimeZone")
-                time_zone(driver, timezone)
+                if timezone == "":
+                    timezone = "EST"
 
-                # photographer = ""
+                # Define time differences for each timezone
+                time_diff = {
+                    "EST": timedelta(hours=9, minutes=30),
+                    "PST": timedelta(hours=12, minutes=30),
+                    "MST": timedelta(hours=11, minutes=30)
+                }
+
+                formatted_ist_time = formatted_due_date + time_diff.get(timezone)
+                ist_time = formatted_ist_time.strftime("%m/%d/%Y %H:%M:%S")
+               
+
                 photographer = ordervalues.get("Photographer")
-                photo_grapher(driver, photographer)
+                if photographer == "":
+                    photographer = "Ecesis Photographer"
 
                 # photographernotes = ""
                 photographernotes = ordervalues.get("Notes")
-                if photographernotes != "":
-                    photographer_notes(driver, photographernotes)
 
                 #portal = "Single Source" #convert to single letters and compare
                 portal = ordervalues.get("Portal")
-                portal_fun(driver, portal)
 
                 # photographerfee = "10"
                 photographerfee = ordervalues.get("PhotoFee")
-                photographer_fee(driver, photographerfee)
 
                 # ordervalue = "10"
                 ordervalue = ordervalues.get("OrderValue")
-                order_value(driver, ordervalue)
 
                     # remarks = ""
                 remarks = ordervalues.get("Remarks")
-                if remarks != "":
-                    remarks_fun(driver, remarks)
 
-                saveorder(driver)
+                # Format order data for API
+                SelectrequestBody = {
+                    'clientName': clientname,
+                    'subjectAddress': subjectaddress,
+                    'orderType': ordertype,
+                    'photographerName': photographer,
+                    'portalName': portal,
+                    # Add other fields as needed
+                }
+
+                # start_time = time.time()
+                start_time = time.time()
+                client_id, portal_id, photographer_id, ordertype_id, zipcode_no = fetch_required_values(GetRequiredValuesAPI, SelectrequestBody)
+
+                isfrombts = 0
+                employeeid = 328
+                isbulk =0
+
+                PostRequestedBody = {
+                    "clientId": client_id,
+                    "procBulkData": f"{isfrombts}~{employeeid}~{orderno}~{duedatetime}~{subjectaddress}~{ordertype_id}~{portal_id}~{photographer_id}~{client_id}~{ordervalue}~{zipcode_no}~{ist_time}~{isbulk}~{photographernotes}~"
+                }
+
+                if client_id == 0:
+                    message = "Values not Found"
+                    
+                elif client_id < 0:
+                    message = "Client Not Found"
+                    
+                elif portal_id < 0:
+                    message = "Portal Not Found"
+                    
+                elif photographer_id < 0:
+                    message = "Photographer Not Found"
+                    
+                elif ordertype_id < 0:
+                    message = "OrderType Not Found"
+                    
+                elif zipcode_no == "-5":
+                    message = "Zipcode Not Found"
+                    
+                else:
+                    message = fetch_createorder_api(CreateOrderAPI, PostRequestedBody)
+
                 end_time = time.time()
-                modal_okay(driver)
+                order_sheet.update_cell(row_index, len(ordervalues) - 2, message)
 
-                select_create_order_module(driver)
-
-                order_sheet.update_cell(row_index, len(ordervalues) - 2, "created")
-
-                start_datetime = datetime.datetime.fromtimestamp(start_time)
-                end_datetime = datetime.datetime.fromtimestamp(end_time)
-
-                # Convert datetime objects to Indian Standard Time (IST)
-                ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-                start_ist = start_datetime.astimezone(ist)
-                end_ist = end_datetime.astimezone(ist)
+                start_datetime = datetime.fromtimestamp(start_time)
+                end_datetime = datetime.fromtimestamp(end_time)
 
                 # Convert datetime object to a string format
-                start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
-                end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
+                start_ist_str = start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                end_ist_str = end_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
 
                 order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
                 order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
+                
+                # if fetch_required_values(GetRequiredValuesAPI, SelectrequestBody):
+                #     end_time = time.time()
+
+                #     order_sheet.update_cell(row_index, len(ordervalues) - 2, "created")
+
+                #     start_datetime = datetime.datetime.fromtimestamp(start_time)
+                #     end_datetime = datetime.datetime.fromtimestamp(end_time)
+
+                #     # Convert datetime objects to Indian Standard Time (IST)
+                #     ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                #     start_ist = start_datetime.astimezone(ist)
+                #     end_ist = end_datetime.astimezone(ist)
+
+                #     # Convert datetime object to a string format
+                #     start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
+                #     end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
+
+                #     order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
+                #     order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
+                # else:
+                #     end_time = time.time()
+
+                #     order_sheet.update_cell(row_index, len(ordervalues) - 2, "Not created")
+
+                #     start_datetime = datetime.datetime.fromtimestamp(start_time)
+                #     end_datetime = datetime.datetime.fromtimestamp(end_time)
+
+                #     # Convert datetime objects to Indian Standard Time (IST)
+                #     ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                #     start_ist = start_datetime.astimezone(ist)
+                #     end_ist = end_datetime.astimezone(ist)
+
+                #     # Convert datetime object to a string format
+                #     start_ist_str = start_ist.strftime("%Y-%m-%d %H:%M:%S")
+                #     end_ist_str = end_ist.strftime("%Y-%m-%d %H:%M:%S")
+
+                #     order_sheet.update_cell(row_index, len(ordervalues) - 1, start_ist_str)
+                #     order_sheet.update_cell(row_index, len(ordervalues), end_ist_str)
 
         else:
            # If no new rows are found, sleep for 10 seconds before checking again
            time.sleep(10)
 
-# if __name__ == "__main__":
-#    main()
+if __name__ == "__main__":
+   main()
    
